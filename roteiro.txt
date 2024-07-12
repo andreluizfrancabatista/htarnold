@@ -1,0 +1,28 @@
+odd draw >= 3.5
+odd over 0.5 ht <= 1.3
+odd home <= 2.4
+odd btts sim >= 1.5
+jogos home >= 3
+jogos home <= 16
+gols marcados ht home <= partidas jogadas home (média de gols marcados em casa >= 1)
+gols sofridos ht away <= partidas jogadas away (média de gols marcados em casa >= 1)
+jogo 0x0 no ht antes dos 30'
+
+# PARA PREVISÃO
+- pegar jogos de amanhã 
+- nem todo jogo vai ter as odds
+- montar o dataset com as seguintes colunas
+date;time;home;away;country;league;oddHome;oddDraw;oddAway;oddBTTSyes;odd05HT;jogosHome;golsMarcadosHTHome;jogosAway;golsSofridosHTAway
+- fazer o filtro no Excel ou no Pandas
+- Importante: as casas de apostas, discordam muito pouco nas odds. 
+- Exemplo: no filtro tem a regra odd btts sim >= 3, mas se a casa oferecer 2.99, o filtro não vai pegar.
+- Talvez seria interessante fazer uma margem de segurança de 5%, exemplo odd >= 3 vira odd >= 2.7
+
+# PARA BACKTESTING
+- pega todos os jogos de um campeonato ou vários campeonatos (já concluído ou acima da 30a rodada)
+- montar o dataset com as seguintes colunas
+date;time;home;away;country;league;FTHG;FTAG;HTHG;HTAG;oddHome;oddDraw;oddAway;oddBTTSyes;odd05HT;jogosHome;golsMarcadosHTHome;jogosAway;golsSofridosHTAway
+- Fazer a análise com janelas passadas (ex.: jogo da rodada 24, testa com os jogos das rodadas 8 até 23 (15 rodadas pra trás))
+- fazer o filtro no Excel ou no Pandas
+- quantidade de jogos que batem com o filtro
+- quantidade de jogos que batem com o filtro e que tiveram over 0.5 gols no HT
