@@ -1,11 +1,12 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+const { title } = require('process');
 
 (
     async () => {
         const browser = await puppeteer.launch({
-            headless: true,
+            headless: false,
             args: [
                 '--no-sandbox',
                 '--disable-gpu'
@@ -16,7 +17,7 @@ const path = require('path');
 
         await page.setViewport({ width: 1366, height: 768 });
 
-        const response = await page.goto('http://www.flashscore.com');
+        const response = await page.goto('https://www.flashfootball.com/');
 
         if (response.ok()) {
             await scrapeData(page);
@@ -32,12 +33,15 @@ async function scrapeData(page) {
     const start = Date.now();
     await page.waitForSelector('button.calendar__navigation--tomorrow');
     await page.click('button.calendar__navigation--tomorrow');
-    const finishedButton = (await page.$$('div.filters__text--default'))[2]; //[2] é scheduled
+    const finishedButton = (await page.$$('div.filters__text--default'))[1]; //[1] é scheduled
     await finishedButton.click();
+    await new Promise(r => setTimeout(r, 1000));
+
 
     //Abrir jogos fechados - Resolver isso!!!
 
     await page.waitForSelector('div.event__match--twoLine');
+
     const dados = {
         DATE: [],
         TIME: [],
@@ -52,6 +56,7 @@ async function scrapeData(page) {
     const date = await dateFull.$eval('button.calendar__datepicker', el => el.innerText.split(' ')[0]);
     console.log(`Coletando jogos do dia ${date}`);
 
+    await page.waitForSelector('div.event__match--twoLine');
     const eventos = (await page.$$('div.event__match--twoLine'));
     for (evento of eventos) {
         try {
@@ -59,27 +64,31 @@ async function scrapeData(page) {
             link = link.split('match-summary')[0];
             link = `${link}odds-comparison/1x2-odds/full-time`;
             links.push(link);
-
-
         } catch (error) {
             console.log(error);
         }
     }
 
     for (link of links) {
-        try {
-            const response = await page.goto(link);
-            if (response.ok()) {
-                //console.log(`Acesso a página do jogo`);
-                let odd = await page.waitForSelector('a[title="1X2"]', { timeout: 500 });
+
+        const response = await page.goto(link);
+        if (response.ok()) {
+            console.log(`Acesso a página do jogo`);
+            try {
+
+                //let odd = await page.waitForSelector('a[title="1X2"]', { timeout: 500 });
+                const duel = await page.waitForSelector('div.duelParticipant__home');
                 const home = await page.$eval('div.duelParticipant__home>div.participant__participantNameWrapper>div.participant__participantName', el => el.innerText);
                 const away = await page.$eval('div.duelParticipant__away>div.participant__participantNameWrapper>div.participant__participantName', el => el.innerText);
                 const dateTime = await page.$eval('div.duelParticipant__startTime', el => el.innerText);
                 const date = dateTime.split(' ')[0];
                 const time = dateTime.split(' ')[1];
-                const countryLeague = await page.$eval('span.tournamentHeader__country', el => el.innerText);
-                const country = countryLeague.split(': ')[0];
-                const league = countryLeague.split(': ')[1];
+
+                // Get text from all spans with the selector "span._overline_1xjjm_4"
+                const countryLeague = await page.$$eval('span._overline_1xjjm_4', spans => spans.map(span => span.innerText));
+                const country = countryLeague[0];
+                const league = countryLeague[1];
+
                 const odds = await page.$$('a.oddsCell__odd  ');
                 const oddHome = await odds[0].$eval('span', el => el.innerText);
                 const oddDraw = await odds[1].$eval('span', el => el.innerText);
@@ -94,61 +103,99 @@ async function scrapeData(page) {
                 await page.click('a[title="Over/Under"]');
                 const odds05HT = await page.$$('a.oddsCell__odd  ');
                 const odd05HT = await odds05HT[0].$eval('span', el => el.innerText); //[0] over, [1] under
-
                 console.log(`${date} ${time} ${country}: ${league} ${home} x ${away} - ${oddHome} ${oddDraw} ${oddAway} ${oddBTTSyes} ${odd05HT}`);
 
-                //Ao clicar em um jogo da lista do H2H, esse jogo abre em uma nova janela, o que impossibilita do page pegar.
-                //Testar o código abaixo para pegar o newPage
-                //Não tá funcionando mas também não tá dando erro.
-
-                await page.waitForSelector('a[href="#/h2h');
-                await page.click('a[href="#/h2h');
-                await page.waitForSelector('a[href="#/h2h/home');
-                await page.click('a[href="#/h2h/home');
-                //Abrir jogos fechados, clicar no showMore --->>> inserir aqui
+                // Clicar no H2H, salvar a URL, visitar um jogo, voltar na URL salva, visitar o próximo jogo, repetir até terminar os cinco jogos
+                await page.waitForSelector('a[href="#/h2h"]');
+                await page.click('a[href="#/h2h"]');
+                await page.waitForSelector('a[href="#/h2h/home"]');
+                await page.click('a[href="#/h2h/home"]');
+                const linkHome = page.url();//funciona
                 await page.waitForSelector('div.h2h__row ');
-                const jogosHome = await page.$$('div.h2h__row ');
-                let i = 0;
-                for (jogo of jogosHome) {
-                    i++;
-                    //save target of original page to know that this was the opener:     
-                    const pageTarget = page.target();
-                    //execute click on first tab that triggers opening of new tab:
-                    await jogo.click(); //await page.click('#selector');
-                    //check that the first page opened this new page:
-                    const newTarget = await browser.waitForTarget(target => target.opener() === pageTarget);
-                    //get the new page object:
-                    const newPage = await newTarget.page();
-                    await newPage.waitForSelector('div.smv__incidentsHeader');
-                    const htscore = await newPage.$eval('div.smv__incidentsHeader', el => el.innerText);
-                    console.log(htscore);
+                await new Promise(r => setTimeout(r, 1000));
+                const eventos = await page.$$('div.h2h__row ');
 
+                // O for com node e await async funciona difererente.
+                // Ler esses artigos:
+                // https://stackoverflow.com/questions/37576685/using-async-await-with-a-foreach-loop
+                // https://oieduardorabelo.medium.com/javascript-armadilhas-do-asyn-await-em-loops-1cdad44db7f0
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of
+
+                for (let i = 0; i < 5; i++) {
+                    await eventos[i].click();
+                    await new Promise(r => setTimeout(r, 500));
+                    await page.waitForSelector('div.smv__incidentsHeader');
+                    const score = await page.$eval('div.smv__incidentsHeader>div:nth-child(2)', el => el.innerText);
+                    console.log(`${score}`);
+                    await page.goto(linkHome);
+                    await new Promise(r => setTimeout(r, 500));
+                    await page.waitForSelector('div.h2h__row ');
                 }
-                console.log(`${i} jogos.`);
+            } catch (error) {
+                console.log(`Erro do try/catch do jogo ${link} `);
+                console.log(error);
 
-
-
-
-
-                // dados.DATE.push(date);
-                // dados.TIME.push(time);
-                // dados.HOME.push(home);
-                // dados.AWAY.push(away);
-                // dados.COUNTRY.push(country);
-                // dados.LEAGUE.push(league);
-                // dados.ODDHOME.push(oddHome);
-                // dados.ODDDRAW.push(oddDraw);
-                // dados.ODDAWAY.push(oddAway);
-                // dados.ODDBTTSYES.push(oddBTTSYes);
-                // dados.ODD05HT.push(odd05HT);
-
-            } else {
-                console.log(`Não foi possível acessar a página do jogo`);
             }
-        } catch (error) {
-            // console.log(`Não foi possível acessar a página do jogo trycatch`);
-            // console.log(`Aba odds não encontrada.`);
+
+
+            //await page.click('div.h2h__row');
+            // eventos.forEach(async (evento) => {
+            //     await evento.click();
+            //     // Get the data you want here and push it into the data array
+            //     await page.waitForSelector('div.smv__incidentsHeader');
+            //     const score = await page.$eval('div.smv__incidentsHeader>div:nth-child(2)', el => el.innerText);
+            //     console.log(`${score}`);
+            //     await page.goBack();
+            // });
+
+
+
+            // Tentar clicar no nome do time e ir para a página de results e pegar de lá.
+
+            // await page.waitForSelector('div.duelParticipant__home>div.participant__participantNameWrapper>div.participant__participantName');
+            // const linkHome = await page.$eval('div.duelParticipant__home>div.participant__participantNameWrapper>div.participant__participantName>a', el => el.getAttribute('href'));
+            // const linkHomeResults = `https://www.flashscore.com${linkHome}results/`;
+            //console.log(linkHomeResults);
+            // await page.goto(linkHomeResults);
+            //console.log(`${await page.title()}`);
+            // await page.waitForSelector('div.event__match--last');
+            // const jogos = await page.$$('div.event__match--last');
+            // const linksResults = [];
+            // const titles = [];
+            //Não está exibindo os IDs
+            // A ideia é pegar os IDs, montar os links de cada partida anterior e pega o resultado do HT
+
+            // Criar uma função separada que recebe um page, uma lista de links, retorna dois inteiros: num de jogos, qtd de gols no ht
+            // se o jogo FT for 0x0, nem entra, conta +1 jogo e soma +0 nos gols HT
+            // se o jogo FT for != 0x0, entra e procura o score HT
+
+            // Tá funcionado
+            // for(jogo of jogos){
+            //     const id = await jogo.$eval('a', el => el.getAttribute('href'));
+            //     linksResults.push(id);
+            // }
+
+            // console.log(linksResults);
+            // return 0;
+
+
+
+            // dados.DATE.push(date);
+            // dados.TIME.push(time);
+            // dados.HOME.push(home);
+            // dados.AWAY.push(away);
+            // dados.COUNTRY.push(country);
+            // dados.LEAGUE.push(league);
+            // dados.ODDHOME.push(oddHome);
+            // dados.ODDDRAW.push(oddDraw);
+            // dados.ODDAWAY.push(oddAway);
+            // dados.ODDBTTSYES.push(oddBTTSYes);
+            // dados.ODD05HT.push(odd05HT);
+
+        } else {
+            console.log(`Não foi possível acessar a página do jogo`);
         }
+
     }
 
     // date;time;home;away;country;league;oddHome;oddDraw;oddAway;oddBTTSyes;odd05HT;jogosHome;golsMarcadosHTHome;jogosAway;golsSofridosHTAway
